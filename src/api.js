@@ -58,7 +58,7 @@ export async function login(email, password) {
   return { token, profile: mapUser(data.user), message: payload.message };
 }
 
-export async function register({ name, email, password, passwordConfirmation, level, schoolId }) {
+export async function register({ name, email, password, passwordConfirmation, schoolId, classroomId }) {
   const payload = await apiRequest("auth/register", {
     method: "POST",
     token: null,
@@ -67,8 +67,8 @@ export async function register({ name, email, password, passwordConfirmation, le
       email,
       password,
       password_confirmation: passwordConfirmation,
-      level,
       school_id: schoolId,
+      classroom_id: classroomId,
       device_name: "web"
     }
   });
@@ -333,7 +333,14 @@ function mapUser(user = {}) {
 }
 
 function mapSchool(school = {}) {
-  return { id: Number(school.id || 0), name: String(school.name || "").trim() };
+  return {
+    id: Number(school.id || 0),
+    name: String(school.name || "").trim(),
+    classrooms: (school.classrooms || []).map(classroom => ({
+      id: Number(classroom.id || 0),
+      name: String(classroom.name || "").trim()
+    }))
+  };
 }
 
 function mapMoodOption(option = {}) {

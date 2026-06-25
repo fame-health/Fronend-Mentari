@@ -33,10 +33,42 @@ const pageCopy = {
   profile: ["Profil Pengguna", "Kelola identitas, preferensi, dan ringkasan aktivitas."]
 };
 
+const iconFallbacks = {
+  arrow_back: "<",
+  arrow_forward: ">",
+  article: "A",
+  assignment: "T",
+  auto_awesome: "*",
+  bolt: "!",
+  calendar: "D",
+  calendar_month: "D",
+  chat_bubble: "C",
+  check: "V",
+  check_circle: "V",
+  delete: "X",
+  favorite: "F",
+  groups: "K",
+  home: "H",
+  image: "I",
+  info: "i",
+  lightbulb: "L",
+  menu_book: "E",
+  monitoring: "A",
+  notifications: "!",
+  open_in_new: "^",
+  person: "P",
+  play_circle: ">",
+  school: "S",
+  search: "S",
+  sentiment_satisfied: "M",
+  shield: "S",
+  trending_up: "^"
+};
+
 export default function App() {
   const [activePage, setActivePage] = useState("home");
+  const [selectedEducationContent, setSelectedEducationContent] = useState(null);
   const [token, setToken] = useState(getStoredToken());
-  const [demoMode, setDemoMode] = useState(false);
   const [data, setData] = useState(fallbackData);
   const [isLoading, setIsLoading] = useState(Boolean(token));
   const [error, setError] = useState("");
@@ -52,11 +84,9 @@ export default function App() {
       if (err.status === 401) {
         await logout();
         setToken(null);
-        setDemoMode(false);
         setError("Sesi berakhir. Silakan masuk kembali.");
       } else {
-        setError(err.message || "Gagal memuat data API. Menampilkan data demo.");
-        setData(fallbackData);
+        setError(err.message || "Gagal memuat data dari server.");
       }
     } finally {
       setIsLoading(false);
@@ -67,13 +97,30 @@ export default function App() {
     if (token) refreshData();
   }, [token]);
 
+  useEffect(() => {
+    if (!document.fonts?.load) return;
+
+    let cancelled = false;
+    document.fonts
+      .load('24px "Material Symbols Rounded"', "home")
+      .then((fonts) => {
+        if (!cancelled && fonts.length) {
+          document.documentElement.classList.add("material-icons-ready");
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleLogin = async (email, password) => {
     setIsLoading(true);
     setError("");
     try {
       const result = await login(email, password);
       setToken(result.token);
-      setDemoMode(false);
       setMessage(result.message || "Login berhasil.");
       if (result.profile) setData((current) => ({ ...current, profile: result.profile }));
     } catch (err) {
@@ -89,7 +136,6 @@ export default function App() {
     try {
       const result = await register(payload);
       setToken(result.token);
-      setDemoMode(false);
       setMessage(result.message || "Registrasi berhasil.");
       if (result.profile) setData((current) => ({ ...current, profile: result.profile }));
     } catch (err) {
@@ -99,28 +145,33 @@ export default function App() {
     }
   };
 
+  const navigateToPage = (page) => {
+    setActivePage(page);
+    setSelectedEducationContent(null);
+  };
+
+  const openEducationContent = (content) => {
+    setSelectedEducationContent(content);
+    setActivePage("education");
+  };
+
   const handleLogout = async () => {
     setIsLoading(true);
     await logout();
     setToken(null);
-    setDemoMode(false);
     setData(fallbackData);
+    setSelectedEducationContent(null);
     setActivePage("home");
     setIsLoading(false);
   };
 
-  if (!token && !demoMode) {
+  if (!token) {
     return (
       <AuthScreen
         error={error}
         isLoading={isLoading}
         onLogin={handleLogin}
         onRegister={handleRegister}
-        onDemo={() => {
-          setError("");
-          setDemoMode(true);
-          setData(fallbackData);
-        }}
       />
     );
   }
@@ -129,13 +180,12 @@ export default function App() {
 
   return (
     <div className="app">
-      <Sidebar activePage={activePage} onNavigate={setActivePage} demoMode={demoMode} />
+      <Sidebar activePage={activePage} onNavigate={navigateToPage} />
 
       <main className="workspace">
         <TopBar
           activeItem={activeItem}
           profile={data.profile}
-          demoMode={demoMode}
           isLoading={isLoading}
           onRefresh={refreshData}
           onLogout={handleLogout}
@@ -153,7 +203,10 @@ export default function App() {
               data={data}
               demoMode={demoMode}
               isLoading={isLoading}
-              onNavigate={setActivePage}
+              selectedEducationContent={selectedEducationContent}
+              onNavigate={navigateToPage}
+              onOpenEducation={openEducationContent}
+              onCloseEducationContent={() => setSelectedEducationContent(null)}
               onRefresh={refreshData}
               onError={setError}
               onMessage={setMessage}
@@ -162,17 +215,17 @@ export default function App() {
             />
           </section>
           <aside className="preview-panel desktop-only">
-            <PhonePreview activePage={activePage} data={data} setActivePage={setActivePage} />
+            <PhonePreview activePage={activePage} data={data} setActivePage={navigateToPage} />
           </aside>
         </div>
       </main>
 
-      <MobileBottomNav activePage={activePage} onNavigate={setActivePage} />
+      <MobileBottomNav activePage={activePage} onNavigate={navigateToPage} />
     </div>
   );
 }
 
-function AuthScreen({ error, isLoading, onLogin, onRegister, onDemo }) {
+function AuthScreen({ error, isLoading, onLogin, onRegister }) {
   const [mode, setMode] = useState("login");
   const [schools, setSchools] = useState([]);
   const [form, setForm] = useState({
@@ -180,8 +233,10 @@ function AuthScreen({ error, isLoading, onLogin, onRegister, onDemo }) {
     email: "",
     password: "",
     passwordConfirmation: "",
-    level: "",
-    schoolId: ""
+    schoolId: "",
+    classroomId: "",
+    showPassword: false,
+    showConfirmPassword: false
   });
   const [schoolError, setSchoolError] = useState("");
 
@@ -191,6 +246,9 @@ function AuthScreen({ error, isLoading, onLogin, onRegister, onDemo }) {
       .then(setSchools)
       .catch((err) => setSchoolError(err.message || "Gagal memuat daftar sekolah."));
   }, [mode, schools.length]);
+
+  const selectedSchool = schools.find(s => s.id === Number(form.schoolId));
+  const availableClassrooms = selectedSchool?.classrooms || [];
 
   const submit = (event) => {
     event.preventDefault();
@@ -202,10 +260,15 @@ function AuthScreen({ error, isLoading, onLogin, onRegister, onDemo }) {
         email: form.email,
         password: form.password,
         passwordConfirmation: form.passwordConfirmation,
-        level: form.level,
-        schoolId: form.schoolId ? Number(form.schoolId) : null
+        schoolId: form.schoolId ? Number(form.schoolId) : null,
+        classroomId: form.classroomId ? Number(form.classroomId) : null
       });
     }
+  };
+
+  const handleSchoolChange = (e) => {
+    const newId = e.target.value;
+    setForm({ ...form, schoolId: newId, classroomId: "" });
   };
 
   return (
@@ -232,34 +295,86 @@ function AuthScreen({ error, isLoading, onLogin, onRegister, onDemo }) {
           {mode === "register" ? (
             <>
               <input className="input" placeholder="Nama lengkap" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              <select className="input" value={form.schoolId} onChange={(e) => setForm({ ...form, schoolId: e.target.value })}>
-                <option value="">Pilih sekolah kamu</option>
-                {schools.map((school) => (
-                  <option key={school.id} value={school.id}>{school.name}</option>
-                ))}
-              </select>
+
+              <div className="custom-select-wrapper">
+                <select className="input select-input" value={form.schoolId} onChange={handleSchoolChange}>
+                  <option value="">Pilih asal sekolah kamu</option>
+                  {schools.map((school) => (
+                    <option key={school.id} value={school.id}>{school.name}</option>
+                  ))}
+                </select>
+                <span className="select-icon"><MaterialIcon name="school" /></span>
+              </div>
+
+              <div className="custom-select-wrapper">
+                <select
+                  className="input select-input"
+                  value={form.classroomId}
+                  onChange={(e) => setForm({ ...form, classroomId: e.target.value })}
+                  disabled={!form.schoolId || availableClassrooms.length === 0}
+                >
+                  <option value="">{!form.schoolId ? "Pilih sekolah dahulu" : availableClassrooms.length === 0 ? "Kelas belum tersedia" : "Pilih kelas kamu"}</option>
+                  {availableClassrooms.map((classroom) => (
+                    <option key={classroom.id} value={classroom.id}>{classroom.name}</option>
+                  ))}
+                </select>
+                <span className="select-icon"><MaterialIcon name="groups" /></span>
+              </div>
+
               {schoolError ? <small className="inline-error">{schoolError}</small> : null}
-              <input className="input" placeholder="Tingkat/Kelas, contoh: XI" value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })} />
             </>
           ) : null}
+
           <input className="input" type="email" placeholder="Email sekolah/kampus" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          <input className="input" type="password" placeholder="Kata sandi" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+
+          <div className="password-input-wrapper">
+            <input
+              className="input"
+              type={form.showPassword ? "text" : "password"}
+              placeholder="Kata sandi"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+            />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setForm({ ...form, showPassword: !form.showPassword })}
+              aria-label={form.showPassword ? "Sembunyikan sandi" : "Lihat sandi"}
+            >
+              <MaterialIcon name={form.showPassword ? "visibility" : "visibility_off"} />
+            </button>
+          </div>
+
           {mode === "register" ? (
-            <input className="input" type="password" placeholder="Konfirmasi kata sandi" value={form.passwordConfirmation} onChange={(e) => setForm({ ...form, passwordConfirmation: e.target.value })} />
+            <div className="password-input-wrapper">
+              <input
+                className="input"
+                type={form.showConfirmPassword ? "text" : "password"}
+                placeholder="Konfirmasi kata sandi"
+                value={form.passwordConfirmation}
+                onChange={(e) => setForm({ ...form, passwordConfirmation: e.target.value })}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setForm({ ...form, showConfirmPassword: !form.showConfirmPassword })}
+                aria-label={form.showConfirmPassword ? "Sembunyikan sandi" : "Lihat sandi"}
+              >
+                <MaterialIcon name={form.showConfirmPassword ? "visibility" : "visibility_off"} />
+              </button>
+            </div>
           ) : null}
+
           <button className="button" disabled={isLoading}>
             {isLoading ? "Memproses..." : mode === "login" ? "Masuk ke dashboard" : "Buat akun"}
           </button>
         </form>
-
-        <button className="button outline" onClick={onDemo} disabled={isLoading}>Lihat demo statis</button>
-        <p className="api-note">API aktif: <code>{API_BASE_URL}</code></p>
       </section>
     </main>
   );
 }
 
-function Sidebar({ activePage, onNavigate, demoMode }) {
+function Sidebar({ activePage, onNavigate }) {
   return (
     <aside className="sidebar">
       <Brand />
@@ -279,10 +394,6 @@ function Sidebar({ activePage, onNavigate, demoMode }) {
           </button>
         ))}
       </nav>
-      <div className="sidebar-note">
-        <strong>{demoMode ? "Mode demo" : "Terhubung API"}</strong>
-        <span>{demoMode ? "Data dummy ditampilkan untuk preview." : API_BASE_URL}</span>
-      </div>
     </aside>
   );
 }
@@ -299,16 +410,16 @@ function Brand() {
   );
 }
 
-function TopBar({ activeItem, profile, demoMode, isLoading, onRefresh, onLogout }) {
+function TopBar({ activeItem, profile, isLoading, onRefresh, onLogout }) {
   return (
     <header className="topbar">
       <div>
-        <span className="eyebrow">{demoMode ? "Demo Statis" : "API Connected"}</span>
+        <span className="eyebrow">Aplikasi Web</span>
         <h2>{activeItem.label}</h2>
       </div>
       <div className="topbar-actions">
-        <button className="connection-chip" onClick={onRefresh} disabled={demoMode || isLoading}>
-          {isLoading ? "Memuat..." : "Refresh API"}
+        <button className="connection-chip" onClick={onRefresh} disabled={isLoading}>
+          {isLoading ? "Memuat..." : "Refresh Data"}
         </button>
         <button className="connection-chip danger" onClick={onLogout}>Keluar</button>
         <div className="profile-chip">
@@ -328,7 +439,7 @@ function StatusBanner({ error, message, onClose }) {
   return (
     <div className={`status-banner ${error ? "error" : "success"}`}>
       <span>{error || message}</span>
-      <button onClick={onClose}>×</button>
+      <button onClick={onClose} aria-label="Tutup notifikasi">×</button>
     </div>
   );
 }
@@ -360,8 +471,8 @@ function ScreenTitle({ page }) {
   );
 }
 
-function Card({ children, className = "", style }) {
-  return <section className={`card ${className}`.trim()} style={style}>{children}</section>;
+function Card({ children, className = "", style, as: Component = "section", ...props }) {
+  return <Component className={`card ${className}`.trim()} style={style} {...props}>{children}</Component>;
 }
 
 function SectionTitle({ title, action, onAction }) {
@@ -393,6 +504,8 @@ function MaterialIcon({ name, filled = false }) {
   return (
     <span
       className="material-symbols-rounded"
+      data-fallback={iconFallbacks[name] || name.slice(0, 1).toUpperCase()}
+      aria-hidden="true"
       style={{ fontVariationSettings: `'FILL' ${filled ? 1 : 0}, 'wght' 600, 'GRAD' 0, 'opsz' 24` }}
     >
       {name}
@@ -404,7 +517,7 @@ function isMaterialIcon(icon) {
   return typeof icon === "string" && /^[a-z0-9_]+$/.test(icon);
 }
 
-function HomePage({ data, onNavigate }) {
+function HomePage({ data, onNavigate, onOpenEducation }) {
   const todayMood = data.moodEntries.at(-1)?.mood ?? data.moodOptions[0];
 
   return (
@@ -450,7 +563,7 @@ function HomePage({ data, onNavigate }) {
 
       <SectionTitle title="Edukasi Untukmu" action="Lihat semua" onAction={() => onNavigate("education")} />
       <ListOrEmpty items={data.educationContents.slice(0, 3)} empty="Belum ada konten edukasi.">
-        {(content) => <EducationCard key={content.id || content.title} content={content} compact />}
+        {(content) => <EducationCard key={content.id || content.title} content={content} compact onOpen={onOpenEducation} />}
       </ListOrEmpty>
 
       <SectionTitle title="Hasil Screening" action="Tes Lagi" onAction={() => onNavigate("screening")} />
@@ -547,7 +660,7 @@ function MoodPage({ data, demoMode, onRefresh, onError, onMessage }) {
                 <h3>{entry.mood.label}</h3>
                 <p>{entry.note || "Tanpa catatan."}</p>
               </div>
-              <button className="icon-action" onClick={() => remove(entry)}><MaterialIcon name="delete" /></button>
+              <button className="icon-action" onClick={() => remove(entry)} aria-label="Hapus catatan mood"><MaterialIcon name="delete" /></button>
             </div>
           </Card>
         )}
@@ -556,7 +669,7 @@ function MoodPage({ data, demoMode, onRefresh, onError, onMessage }) {
   );
 }
 
-function EducationPage({ data }) {
+function EducationPage({ data, selectedEducationContent, onOpenEducation, onCloseEducationContent }) {
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [query, setQuery] = useState("");
   const visible = data.educationContents.filter((content) => {
@@ -564,6 +677,10 @@ function EducationPage({ data }) {
     const matchQuery = !query.trim() || `${content.title} ${content.summary}`.toLowerCase().includes(query.toLowerCase());
     return matchCategory && matchQuery;
   });
+
+  if (selectedEducationContent) {
+    return <EducationDetailPage content={selectedEducationContent} onBack={onCloseEducationContent} />;
+  }
 
   return (
     <div className="page-stack">
@@ -586,7 +703,7 @@ function EducationPage({ data }) {
         ))}
       </div>
       <ListOrEmpty items={visible} empty="Belum ada konten edukasi yang sesuai.">
-        {(content) => <EducationCard key={content.id || content.title} content={content} />}
+        {(content) => <EducationCard key={content.id || content.title} content={content} onOpen={onOpenEducation} />}
       </ListOrEmpty>
     </div>
   );
@@ -871,20 +988,114 @@ function InfoPair({ icon, title, value }) {
   );
 }
 
-function EducationCard({ content, compact = false }) {
-  const typeIcon = content.type === "VIDEO" ? "play_circle" : content.type === "INFOGRAPHIC" ? "image" : "article";
+function EducationDetailPage({ content, onBack }) {
+  const summary = String(content.summary || "").trim();
+  const rawBody = String(content.body || "").trim();
+  const body = isPlaceholderArticleBody(rawBody)
+    ? "Isi lengkap artikel ini belum tersedia."
+    : rawBody || summary || "Materi ini belum memiliki isi lengkap.";
+  const paragraphs = body.split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean);
+  const metaItems = [getEducationTypeLabel(content), content.categoryTitle, content.readTime].filter(Boolean);
+
   return (
-    <Card className="education-card" style={{ "--accent": content.accentColor }}>
-      <IconBadge icon={typeIcon} color={content.accentColor} />
+    <div className="page-stack education-detail-page">
+      <button className="back-button" type="button" onClick={onBack}>
+        <MaterialIcon name="arrow_back" />
+        Kembali ke daftar edukasi
+      </button>
+
+      <Card className="education-detail-card" style={{ "--accent": content.accentColor }}>
+        <div className="education-detail-head">
+          <IconBadge icon={getEducationTypeIcon(content)} color={content.accentColor} />
+          <div>
+            <div className="meta-row education-detail-meta">
+              {metaItems.map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+            </div>
+            <h2>{content.title}</h2>
+            {summary && summary !== body ? <p className="article-summary">{summary}</p> : null}
+          </div>
+        </div>
+
+        <EducationMedia content={content} />
+
+        <article className="article-body">
+          {paragraphs.map((paragraph, index) => (
+            <p key={index}>{paragraph}</p>
+          ))}
+        </article>
+      </Card>
+    </div>
+  );
+}
+
+function EducationMedia({ content }) {
+  if (!content.mediaUrl) return null;
+
+  const isImage = /\.(png|jpe?g|gif|webp|avif|svg)(\?.*)?$/i.test(content.mediaUrl);
+  const isYouTube = content.mediaUrl.includes("youtube.com") || content.mediaUrl.includes("youtu.be");
+
+  if (isImage) {
+    return (
+      <figure className="education-media">
+        <img src={content.mediaUrl} alt={content.title} />
+      </figure>
+    );
+  }
+
+  if (isYouTube) {
+    const videoId = content.mediaUrl.includes("v=")
+      ? content.mediaUrl.split("v=")[1].split("&")[0]
+      : content.mediaUrl.split("/").pop();
+    const embedUrl = `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
+
+    return (
+      <div className="video-container-web">
+        <iframe
+          src={embedUrl}
+          title={content.title}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+        ></iframe>
+      </div>
+    );
+  }
+
+  return (
+    <a className="media-link" href={content.mediaUrl} target="_blank" rel="noreferrer">
+      <MaterialIcon name={content.type === "VIDEO" ? "play_circle" : "open_in_new"} />
+      Buka media pendukung
+    </a>
+  );
+}
+
+function EducationCard({ content, compact = false, onOpen }) {
+  const clickable = typeof onOpen === "function";
+  return (
+    <Card
+      as={clickable ? "button" : "section"}
+      type={clickable ? "button" : undefined}
+      className={`education-card ${clickable ? "education-card-button" : ""}`}
+      style={{ "--accent": content.accentColor }}
+      onClick={clickable ? () => onOpen(content) : undefined}
+    >
+      <IconBadge icon={getEducationTypeIcon(content)} color={content.accentColor} />
       <div>
         <div className="meta-row">
-          <span>{content.type === "INFOGRAPHIC" ? "Infografis" : content.type === "VIDEO" ? "Video" : "Artikel"}</span>
+          <span>{getEducationTypeLabel(content)}</span>
           <span>•</span>
           <span>{content.readTime || "Baca"}</span>
         </div>
         <h3>{content.title}</h3>
         <p>{compact ? truncate(content.summary, 105) : content.summary}</p>
       </div>
+      {clickable ? (
+        <span className="education-card-action">
+          Lihat artikel
+          <MaterialIcon name="arrow_forward" />
+        </span>
+      ) : null}
     </Card>
   );
 }
@@ -1168,4 +1379,20 @@ function MobileBottomNav({ activePage, onNavigate }) {
 function truncate(value, limit) {
   if (!value || value.length <= limit) return value;
   return `${value.slice(0, limit).trim()}...`;
+}
+
+function isPlaceholderArticleBody(value) {
+  return !value || /^[-–—]+$/.test(value);
+}
+
+function getEducationTypeIcon(content) {
+  if (content.type === "VIDEO") return "play_circle";
+  if (content.type === "INFOGRAPHIC") return "image";
+  return "article";
+}
+
+function getEducationTypeLabel(content) {
+  if (content.type === "INFOGRAPHIC") return "Infografis";
+  if (content.type === "VIDEO") return "Video";
+  return "Artikel";
 }
