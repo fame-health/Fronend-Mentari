@@ -177,6 +177,7 @@ export default function App() {
   }
 
   const activeItem = navItems.find((item) => item.id === activePage) ?? navItems[0];
+  const demoMode = false;
 
   return (
     <div className="app">
@@ -444,6 +445,10 @@ function StatusBanner({ error, message, onClose }) {
   );
 }
 
+function CircularProgressIndicator({ color }) {
+  return <div className="circular-progress" style={{ "--color": color }}></div>;
+}
+
 function PageRenderer(props) {
   const pages = {
     home: <HomePage {...props} />,
@@ -455,6 +460,16 @@ function PageRenderer(props) {
     community: <CommunityPage {...props} />,
     profile: <ProfilePage {...props} />
   };
+
+  if (props.isLoading && !props.data.profile.name) {
+    return (
+      <div className="loading-page">
+        <CircularProgressIndicator color={colors.pink} />
+        <p>Menyiapkan Mentari...</p>
+      </div>
+    );
+  }
+
   return pages[props.page] ?? pages.home;
 }
 
