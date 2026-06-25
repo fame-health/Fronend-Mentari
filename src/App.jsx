@@ -22,6 +22,10 @@ const bottomNav = navItems.filter((item) =>
 );
 const quickMenu = navItems.filter((item) => item.id !== "home" && item.id !== "profile");
 
+function lastItem(items) {
+  return items && items.length ? items[items.length - 1] : undefined;
+}
+
 const pageCopy = {
   home: ["Dashboard MENTARI", "Ringkasan kondisi harian, konten edukasi, dan dukungan sekolah."],
   mood: ["Jurnal Mood", "Luangkan satu menit untuk jujur pada perasaanmu hari ini."],
@@ -534,7 +538,7 @@ function isMaterialIcon(icon) {
 }
 
 function HomePage({ data, onNavigate, onOpenEducation }) {
-  const todayMood = data.moodEntries.at(-1)?.mood;
+  const todayMood = lastItem(data.moodEntries)?.mood;
 
   return (
     <div className="page-stack">
@@ -1200,7 +1204,8 @@ function MoodChart({ entries = [], compact = false }) {
       return { x, y, entry };
     });
     const line = points.map((point) => `${point.x},${point.y}`).join(" ");
-    const area = `${left},${top + chartHeight} ${line} ${points.at(-1).x},${top + chartHeight}`;
+    const lastPoint = lastItem(points);
+    const area = `${left},${top + chartHeight} ${line} ${lastPoint.x},${top + chartHeight}`;
     return { width, height, left, top, chartHeight, points, line, area };
   }, [entries, compact]);
   const hasEntries = chart.points.length > 0;
@@ -1339,6 +1344,7 @@ function EmptyCard({ text }) {
 
 function PhonePreview({ activePage, data, setActivePage }) {
   const item = navItems.find((nav) => nav.id === activePage);
+  const latestMood = lastItem(data.moodEntries)?.mood;
   return (
     <div className="phone-shell">
       <div className="phone-status" />
@@ -1356,9 +1362,9 @@ function PhonePreview({ activePage, data, setActivePage }) {
               </div>
             </div>
             <div className="phone-card">
-              <span className="phone-mood">{data.moodEntries.at(-1)?.mood.emoji || "🙂"}</span>
+              <span className="phone-mood">{latestMood?.emoji || "🙂"}</span>
               <strong>Apa kabarmu hari ini?</strong>
-              <small>{data.moodEntries.at(-1)?.mood.label || "Yuk check-in."}</small>
+              <small>{latestMood?.label || "Yuk check-in."}</small>
             </div>
             <div className="phone-grid">
               {quickMenu.slice(0, 4).map((nav) => <span key={nav.id}><IconGlyph icon={nav.icon} /><small>{nav.label}</small></span>)}

@@ -1,4 +1,4 @@
-import { colors, createEmptyUserData, emptyActivityStats } from "./mockData";
+import { cloneData, colors, createEmptyUserData, emptyActivityStats } from "./mockData";
 
 const DEFAULT_BASE_URL = "https://bookperdi.my.id/api/v1";
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
@@ -33,7 +33,7 @@ export async function apiRequest(path, { method = "GET", body, token = getStored
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const firstValidation = payload?.errors
-      ? Object.values(payload.errors).flat().find(Boolean)
+      ? Object.values(payload.errors).reduce((items, item) => items.concat(item), []).find(Boolean)
       : null;
     const message = firstValidation || payload?.message || `Permintaan gagal (HTTP ${response.status}).`;
     const error = new Error(message);
@@ -104,7 +104,7 @@ export async function loadMentariData() {
     recommendations,
     communityPosts,
     riskAlerts
-  ] = await Promise.allSettled([
+  ] = await settleAll([
     apiRequest("auth/me"),
     apiRequest("dashboard"),
     apiRequest("mood-options"),
@@ -462,7 +462,7 @@ function mapRiskAlert(alert = {}) {
 }
 
 function mapStatistics(statistics) {
-  if (!statistics) return structuredClone(emptyActivityStats);
+  if (!statistics) return cloneData(emptyActivityStats);
   const palette = [colors.pink, colors.lavender, colors.mint, colors.peach, colors.sun];
   if (Array.isArray(statistics)) {
     const mapped = statistics.map((item, index) => ({
@@ -471,7 +471,7 @@ function mapStatistics(statistics) {
       helper: item.helper || "",
       accentColor: normalizeColor(item.accent_color, palette[index % palette.length])
     }));
-    return mapped.length ? mapped : structuredClone(emptyActivityStats);
+    return mapped.length ? mapped : cloneData(emptyActivityStats);
   }
   if (typeof statistics === "object") {
     const mapped = Object.entries(statistics).map(([key, value], index) => ({
@@ -480,9 +480,9 @@ function mapStatistics(statistics) {
       helper: typeof value === "object" ? value?.helper || "" : "",
       accentColor: palette[index % palette.length]
     }));
-    return mapped.length ? mapped : structuredClone(emptyActivityStats);
+    return mapped.length ? mapped : cloneData(emptyActivityStats);
   }
-  return structuredClone(emptyActivityStats);
+  return cloneData(emptyActivityStats);
 }
 
 function deriveCategories(contents) {
@@ -522,7 +522,7 @@ function severityLabel(value) {
     severe: "Berat",
     extremely_severe: "Sangat berat"
   };
-  return map[String(value || "").toLowerCase()] || String(value || "").replaceAll("_", " ");
+  return map[String(value || "").toLowerCase()] || String(value || "").replace(/_/g, " ");
 }
 
 function severityColor(value) {
@@ -580,7 +580,16 @@ function formatMonthYear(value) {
 }
 
 function toTitle(value) {
-  return String(value).replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  return String(value).replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function settleAll(promises) {
+  return Promise.all(promises.map((promise) =>
+    Promise.resolve(promise).then(
+      (value) => ({ status: "fulfilled", value }),
+      (reason) => ({ status: "rejected", reason })
+    )
+  ));
 }
 
 function clamp(value, min, max) {

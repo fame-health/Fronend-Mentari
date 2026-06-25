@@ -36,6 +36,10 @@ export const emptyActivityStats = [
   { label: "Dukungan", value: "0", helper: "belum ada data", accentColor: colors.peach }
 ];
 
+export function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 export const fallbackData = {
   profile: {
     id: 0,
@@ -213,7 +217,7 @@ fallbackData.moodEntries = todaySeed.map(([dayName, dateLabel, moodIndex, note, 
 fallbackData.screeningResults = [fallbackData.latestScreening];
 
 export function createEmptyUserData(profile = {}) {
-  const data = structuredClone(fallbackData);
+  const data = cloneData(fallbackData);
   const emptyProfile = {
     id: 0,
     name: "",
@@ -231,7 +235,7 @@ export function createEmptyUserData(profile = {}) {
     ...mergedProfile,
     initial: mergedProfile.initial || mergedProfile.name.slice(0, 1).toUpperCase() || "M",
     streakDays: Number(mergedProfile.streakDays || 0),
-    canTakeScreening: mergedProfile.canTakeScreening ?? true
+    canTakeScreening: mergedProfile.canTakeScreening == null ? true : mergedProfile.canTakeScreening
   };
   data.moodEntries = [];
   data.riskAlerts = [];
@@ -239,7 +243,7 @@ export function createEmptyUserData(profile = {}) {
   data.screeningResults = [];
   data.recommendations = [];
   data.communityPosts = [];
-  data.activityStats = structuredClone(emptyActivityStats);
+  data.activityStats = cloneData(emptyActivityStats);
 
   return data;
 }
