@@ -15,7 +15,7 @@ import {
   toggleCommunityLike,
   updateProfile
 } from "./api";
-import { colors, fallbackData, navItems } from "./mockData";
+import { colors, createEmptyUserData, fallbackData, navItems } from "./mockData";
 
 const bottomNav = navItems.filter((item) =>
   ["home", "mood", "screening", "community", "profile"].includes(item.id)
@@ -66,11 +66,12 @@ const iconFallbacks = {
 };
 
 export default function App() {
+  const initialToken = getStoredToken();
   const [activePage, setActivePage] = useState("home");
   const [selectedEducationContent, setSelectedEducationContent] = useState(null);
-  const [token, setToken] = useState(getStoredToken());
-  const [data, setData] = useState(fallbackData);
-  const [isLoading, setIsLoading] = useState(Boolean(token));
+  const [token, setToken] = useState(initialToken);
+  const [data, setData] = useState(() => initialToken ? createEmptyUserData() : fallbackData);
+  const [isLoading, setIsLoading] = useState(Boolean(initialToken));
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -120,9 +121,9 @@ export default function App() {
     setError("");
     try {
       const result = await login(email, password);
+      setData(createEmptyUserData(result.profile));
       setToken(result.token);
       setMessage(result.message || "Login berhasil.");
-      if (result.profile) setData((current) => ({ ...current, profile: result.profile }));
     } catch (err) {
       setError(err.message || "Login gagal.");
     } finally {
@@ -135,9 +136,9 @@ export default function App() {
     setError("");
     try {
       const result = await register(payload);
+      setData(createEmptyUserData(result.profile));
       setToken(result.token);
       setMessage(result.message || "Registrasi berhasil.");
-      if (result.profile) setData((current) => ({ ...current, profile: result.profile }));
     } catch (err) {
       setError(err.message || "Registrasi gagal.");
     } finally {
@@ -533,7 +534,7 @@ function isMaterialIcon(icon) {
 }
 
 function HomePage({ data, onNavigate, onOpenEducation }) {
-  const todayMood = data.moodEntries.at(-1)?.mood ?? data.moodOptions[0];
+  const todayMood = data.moodEntries.at(-1)?.mood;
 
   return (
     <div className="page-stack">
@@ -554,10 +555,10 @@ function HomePage({ data, onNavigate, onOpenEducation }) {
 
       <Card>
         <div className="mood-check">
-          <div className="mood-orb">{todayMood?.emoji || "❓"}</div>
+          <div className="mood-orb">{todayMood?.emoji || "🙂"}</div>
           <div>
             <h3>Apa kabarmu hari ini?</h3>
-            <p>{todayMood?.label || "Yuk catat perasaanmu sekarang."}</p>
+            <p>{todayMood?.label || "Belum ada check-in hari ini."}</p>
           </div>
         </div>
         <small className="muted-label">Tren mood 7 hari terakhir</small>
@@ -1179,9 +1180,9 @@ function MetricCard({ stat }) {
   );
 }
 
-function MoodChart({ entries, compact = false }) {
+function MoodChart({ entries = [], compact = false }) {
   const chart = useMemo(() => {
-    const safeEntries = entries.length ? entries.slice(-7) : fallbackData.moodEntries.slice(-7);
+    const safeEntries = entries.slice(-7);
     const width = 640;
     const height = compact ? 180 : 220;
     const left = compact ? 18 : 70;
@@ -1189,6 +1190,9 @@ function MoodChart({ entries, compact = false }) {
     const top = 18;
     const chartWidth = width - left - right;
     const chartHeight = height - top - 44;
+    if (!safeEntries.length) {
+      return { width, height, left, top, chartHeight, points: [], line: "", area: "" };
+    }
     const points = safeEntries.map((entry, index) => {
       const step = safeEntries.length <= 1 ? 0 : chartWidth / (safeEntries.length - 1);
       const x = left + step * index;
@@ -1199,6 +1203,7 @@ function MoodChart({ entries, compact = false }) {
     const area = `${left},${top + chartHeight} ${line} ${points.at(-1).x},${top + chartHeight}`;
     return { width, height, left, top, chartHeight, points, line, area };
   }, [entries, compact]);
+  const hasEntries = chart.points.length > 0;
 
   const labels = [
     { label: "😊 Hebat", score: 5 },
@@ -1226,24 +1231,33 @@ function MoodChart({ entries, compact = false }) {
             </g>
           );
         })}
-        <polygon points={chart.area} fill="url(#moodArea)" />
-        <polyline points={chart.line} className="mood-line" />
-        {chart.points.map((point) => (
-          <g key={`${point.entry.id}-${point.entry.entryDate}`}>
-            <circle cx={point.x} cy={point.y} r="7" fill="#fff" />
-            <circle cx={point.x} cy={point.y} r="4" fill={point.entry.mood.color} />
-            <text x={point.x} y={chart.top + chart.chartHeight + 28} textAnchor="middle" className="day-label">
-              {point.entry.dayName}
-            </text>
-          </g>
-        ))}
+        {hasEntries ? (
+          <>
+            <polygon points={chart.area} fill="url(#moodArea)" />
+            <polyline points={chart.line} className="mood-line" />
+            {chart.points.map((point) => (
+              <g key={`${point.entry.id}-${point.entry.entryDate}`}>
+                <circle cx={point.x} cy={point.y} r="7" fill="#fff" />
+                <circle cx={point.x} cy={point.y} r="4" fill={point.entry.mood.color} />
+                <text x={point.x} y={chart.top + chart.chartHeight + 28} textAnchor="middle" className="day-label">
+                  {point.entry.dayName}
+                </text>
+              </g>
+            ))}
+          </>
+        ) : (
+          <text x={chart.width / 2} y={chart.top + chart.chartHeight / 2} textAnchor="middle" className="axis-label">
+            Belum ada data mood
+          </text>
+        )}
       </svg>
     </div>
   );
 }
 
 function MiniMoodCalendar({ entries }) {
-  const days = entries.length ? entries.slice(-14) : fallbackData.moodEntries.concat(fallbackData.moodEntries);
+  if (!entries.length) return <p className="muted-label">Belum ada kalender mood.</p>;
+  const days = entries.slice(-14);
   return (
     <div className="mini-calendar">
       {days.map((entry, index) => (

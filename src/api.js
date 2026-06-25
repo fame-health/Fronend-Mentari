@@ -1,4 +1,4 @@
-import { colors, fallbackData } from "./mockData";
+import { colors, createEmptyUserData, emptyActivityStats } from "./mockData";
 
 const DEFAULT_BASE_URL = "https://bookperdi.my.id/api/v1";
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
@@ -93,8 +93,6 @@ export async function loadSchools() {
 }
 
 export async function loadMentariData() {
-  const base = structuredClone(fallbackData);
-
   const [
     me,
     dashboard,
@@ -123,7 +121,7 @@ export async function loadMentariData() {
     throw me.reason;
   }
 
-  const data = { ...base };
+  const data = createEmptyUserData();
   if (me.status === "fulfilled") data.profile = mapUser(unwrapData(me.value));
 
   if (dashboard.status === "fulfilled") {
@@ -142,7 +140,7 @@ export async function loadMentariData() {
   }
   if (moodEntries.status === "fulfilled") {
     const mapped = findArray(moodEntries.value).map(mapMoodEntry).filter(Boolean);
-    if (mapped.length) data.moodEntries = mapped;
+    data.moodEntries = mapped;
   }
   if (screeningQuestions.status === "fulfilled") {
     const mapped = findArray(screeningQuestions.value).map(mapScreeningQuestion).filter((item) => item.id);
@@ -150,10 +148,8 @@ export async function loadMentariData() {
   }
   if (screeningResults.status === "fulfilled") {
     const mapped = findArray(screeningResults.value).map(mapScreeningResult).filter(Boolean);
-    if (mapped.length) {
-      data.screeningResults = mapped;
-      data.latestScreening = mapped[0];
-    }
+    data.screeningResults = mapped;
+    data.latestScreening = mapped[0] || null;
   }
   if (education.status === "fulfilled") {
     if (education.value.categories.length) data.educationCategories = education.value.categories;
@@ -161,15 +157,15 @@ export async function loadMentariData() {
   }
   if (recommendations.status === "fulfilled") {
     const mapped = findArray(recommendations.value).map(mapRecommendation).filter((item) => item.id);
-    if (mapped.length) data.recommendations = mapped;
+    data.recommendations = mapped;
   }
   if (communityPosts.status === "fulfilled") {
     const mapped = findArray(communityPosts.value).map((post) => mapCommunityPost(post, data.profile.id)).filter((item) => item.id);
-    if (mapped.length) data.communityPosts = mapped;
+    data.communityPosts = mapped;
   }
   if (riskAlerts.status === "fulfilled") {
     const mapped = findArray(riskAlerts.value).map(mapRiskAlert).filter((item) => item.id);
-    if (mapped.length) data.riskAlerts = mapped.filter((alert) => !alert.dismissedAt);
+    data.riskAlerts = mapped.filter((alert) => !alert.dismissedAt);
   }
 
   return data;
@@ -328,7 +324,7 @@ function mapUser(user = {}) {
     initial: user.avatar_initial || name.slice(0, 1).toUpperCase() || "M",
     streakDays: Number(user.streak_days || 0),
     joinedLabel: user.created_at ? `Bergabung ${formatMonthYear(user.created_at)}` : "",
-    canTakeScreening: Boolean(user.can_take_screening)
+    canTakeScreening: user.can_take_screening == null ? true : Boolean(user.can_take_screening)
   };
 }
 
@@ -466,26 +462,27 @@ function mapRiskAlert(alert = {}) {
 }
 
 function mapStatistics(statistics) {
-  if (!statistics) return fallbackData.activityStats;
+  if (!statistics) return structuredClone(emptyActivityStats);
   const palette = [colors.pink, colors.lavender, colors.mint, colors.peach, colors.sun];
   if (Array.isArray(statistics)) {
     const mapped = statistics.map((item, index) => ({
       label: item.label || "",
-      value: String(item.value || ""),
+      value: String(item.value ?? ""),
       helper: item.helper || "",
       accentColor: normalizeColor(item.accent_color, palette[index % palette.length])
     }));
-    return mapped.length ? mapped : fallbackData.activityStats;
+    return mapped.length ? mapped : structuredClone(emptyActivityStats);
   }
   if (typeof statistics === "object") {
-    return Object.entries(statistics).map(([key, value], index) => ({
+    const mapped = Object.entries(statistics).map(([key, value], index) => ({
       label: toTitle(key),
-      value: typeof value === "object" ? String(value?.value || "") : String(value || ""),
+      value: typeof value === "object" ? String(value?.value ?? "") : String(value ?? ""),
       helper: typeof value === "object" ? value?.helper || "" : "",
       accentColor: palette[index % palette.length]
     }));
+    return mapped.length ? mapped : structuredClone(emptyActivityStats);
   }
-  return fallbackData.activityStats;
+  return structuredClone(emptyActivityStats);
 }
 
 function deriveCategories(contents) {

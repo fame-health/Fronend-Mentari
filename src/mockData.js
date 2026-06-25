@@ -29,6 +29,13 @@ export const navItems = [
   { id: "profile", label: "Profil", subtitle: "Akun pengguna", icon: "person", color: colors.mint }
 ];
 
+export const emptyActivityStats = [
+  { label: "Mood Check-in", value: "0x", helper: "belum ada data", accentColor: colors.pink },
+  { label: "Rata-rata Mood", value: "-", helper: "belum ada data", accentColor: colors.mint },
+  { label: "Konten Dibaca", value: "0", helper: "belum ada data", accentColor: colors.lavender },
+  { label: "Dukungan", value: "0", helper: "belum ada data", accentColor: colors.peach }
+];
+
 export const fallbackData = {
   profile: {
     id: 0,
@@ -204,3 +211,35 @@ fallbackData.moodEntries = todaySeed.map(([dayName, dateLabel, moodIndex, note, 
 }));
 
 fallbackData.screeningResults = [fallbackData.latestScreening];
+
+export function createEmptyUserData(profile = {}) {
+  const data = structuredClone(fallbackData);
+  const emptyProfile = {
+    id: 0,
+    name: "",
+    email: "",
+    school: "Sekolah belum ditentukan",
+    level: "",
+    initial: "M",
+    streakDays: 0,
+    joinedLabel: "",
+    canTakeScreening: true
+  };
+  const mergedProfile = { ...emptyProfile, ...profile };
+
+  data.profile = {
+    ...mergedProfile,
+    initial: mergedProfile.initial || mergedProfile.name.slice(0, 1).toUpperCase() || "M",
+    streakDays: Number(mergedProfile.streakDays || 0),
+    canTakeScreening: mergedProfile.canTakeScreening ?? true
+  };
+  data.moodEntries = [];
+  data.riskAlerts = [];
+  data.latestScreening = null;
+  data.screeningResults = [];
+  data.recommendations = [];
+  data.communityPosts = [];
+  data.activityStats = structuredClone(emptyActivityStats);
+
+  return data;
+}
