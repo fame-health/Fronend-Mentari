@@ -117,11 +117,48 @@ export const fallbackData = {
     id: 1,
     dateLabel: "23 Jun 2026",
     summary: "Pantau kondisi secara berkala.",
+    analysis: {
+      severity: "moderate",
+      severityLabel: "Sedang",
+      title: "Gejala Sedang",
+      mainPoints: ["Gejala yang muncul sudah cukup mengganggu aktivitas harian."],
+      educationMessage: "Gejala perlu ditangani dengan dukungan yang tepat."
+    },
+    recommendation: {
+      id: 44,
+      title: "Skrip konseling stres",
+      category: "counseling_script",
+      severity: "moderate",
+      severityLabel: "Sedang",
+      description: "Validasi perasaan siswa dan ajak bernapas perlahan sebelum memilih langkah berikutnya.",
+      durationMinutes: 3,
+      duration: "3 menit",
+      priority: "medium",
+      accentColor: colors.sun,
+      isActive: true,
+      isHighSeverity: false,
+      hasSafetyMessage: false
+    },
     scores: [
       { label: "Depresi", rawScore: 12, severity: "Ringan", color: colors.mint },
       { label: "Kecemasan", rawScore: 18, severity: "Sedang", color: colors.peach },
       { label: "Stres", rawScore: 20, severity: "Sedang", color: colors.pink }
     ]
+  },
+  personalizedRecommendation: {
+    id: 44,
+    title: "Skrip konseling stres",
+    category: "counseling_script",
+    severity: "moderate",
+    severityLabel: "Sedang",
+    description: "Validasi perasaan siswa dan ajak bernapas perlahan sebelum memilih langkah berikutnya.",
+    durationMinutes: 3,
+    duration: "3 menit",
+    priority: "medium",
+    accentColor: colors.sun,
+    isActive: true,
+    isHighSeverity: false,
+    hasSafetyMessage: false
   },
   screeningResults: [],
   screeningQuestions: [
@@ -134,28 +171,61 @@ export const fallbackData = {
       id: 1,
       title: "Jurnal 3 hal yang bisa dikendalikan",
       category: "Coping singkat",
+      severity: "moderate",
+      severityLabel: "Sedang",
       description: "Tulis satu kekhawatiran, satu tindakan kecil, dan satu orang yang bisa dihubungi.",
+      durationMinutes: 10,
       duration: "10 menit",
       priority: "Prioritas",
-      accentColor: colors.pink
+      accentColor: colors.pink,
+      isActive: true,
+      isHighSeverity: false,
+      hasSafetyMessage: false
     },
     {
       id: 2,
       title: "Grounding 5-4-3-2-1",
       category: "Regulasi emosi",
+      severity: "mild",
+      severityLabel: "Ringan",
       description: "Gunakan indera untuk kembali ke kondisi saat ini ketika pikiran terasa penuh.",
+      durationMinutes: 5,
       duration: "5 menit",
       priority: "Ringan",
-      accentColor: colors.lavender
+      accentColor: colors.lavender,
+      isActive: true,
+      isHighSeverity: false,
+      hasSafetyMessage: false
     },
     {
       id: 3,
       title: "Jalan kaki tanpa gawai",
       category: "Aktivitas fisik",
+      severity: "normal",
+      severityLabel: "Normal",
       description: "Berjalan pelan sambil memperhatikan ritme napas dan lingkungan sekitar.",
+      durationMinutes: 15,
       duration: "15 menit",
       priority: "Opsional",
-      accentColor: colors.mint
+      accentColor: colors.mint,
+      isActive: true,
+      isHighSeverity: false,
+      hasSafetyMessage: false
+    },
+    {
+      id: 4,
+      title: "Skrip minta bantuan aman",
+      category: "Dukungan tepercaya",
+      severity: "severe",
+      severityLabel: "Berat",
+      description: "Pesan keselamatan: hubungi orang dewasa tepercaya bila situasi terasa tidak aman.",
+      durationMinutes: 5,
+      duration: "5 menit",
+      priority: "high",
+      accentColor: colors.pink,
+      isActive: true,
+      isHighSeverity: true,
+      hasSafetyMessage: true
     }
   ],
   communityPosts: [

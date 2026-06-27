@@ -26,6 +26,30 @@ function lastItem(items) {
   return items && items.length ? items[items.length - 1] : undefined;
 }
 
+function getAnalysisAccentColor(analysis) {
+  const severity = analysis?.severity;
+  if (severity === "normal") return colors.mint;
+  if (severity === "mild") return colors.lavender;
+  if (severity === "moderate") return colors.sun;
+  if (severity === "severe" || severity === "extremely_severe") return "#B3261E";
+  return colors.pink;
+}
+
+function containsSafetyMessage(value) {
+  const text = String(value || "").toLowerCase();
+  return [
+    "pesan keselamatan",
+    "tidak aman",
+    "menyakiti diri",
+    "bunuh diri",
+    "darurat",
+    "segera hubungi",
+    "orang dewasa tepercaya",
+    "guru bk",
+    "tenaga kesehatan"
+  ].some((keyword) => text.includes(keyword));
+}
+
 const pageCopy = {
   home: ["Dashboard MENTARI", "Ringkasan kondisi harian, konten edukasi, dan dukungan sekolah."],
   mood: ["Jurnal Mood", "Luangkan satu menit untuk jujur pada perasaanmu hari ini."],
@@ -162,12 +186,17 @@ export default function App() {
 
   const handleLogout = async () => {
     setIsLoading(true);
-    await logout();
-    setToken(null);
-    setData(fallbackData);
-    setSelectedEducationContent(null);
-    setActivePage("home");
-    setIsLoading(false);
+    try {
+      await logout();
+    } catch {
+      // Ignore logout errors
+    } finally {
+      setToken(null);
+      setData(fallbackData);
+      setSelectedEducationContent(null);
+      setActivePage("home");
+      setIsLoading(false);
+    }
   };
 
   if (!token) {
@@ -466,11 +495,23 @@ function PageRenderer(props) {
     profile: <ProfilePage {...props} />
   };
 
-  if (props.isLoading && !props.data.profile.name) {
+  const isProfileLoaded = props.data && props.data.profile && props.data.profile.name;
+
+  if (props.isLoading && !isProfileLoaded) {
     return (
       <div className="loading-page">
         <CircularProgressIndicator color={colors.pink} />
         <p>Menyiapkan Mentari...</p>
+      </div>
+    );
+  }
+
+  // Final fallback to prevent white screen if data is somehow corrupted
+  if (!props.data || !props.data.profile) {
+    return (
+      <div className="loading-page">
+        <p>Gagal memuat data pengguna.</p>
+        <PrimaryButton onClick={props.onRefresh}>Coba Lagi</PrimaryButton>
       </div>
     );
   }
@@ -538,7 +579,9 @@ function isMaterialIcon(icon) {
 }
 
 function HomePage({ data, onNavigate, onOpenEducation }) {
-  const todayMood = lastItem(data.moodEntries)?.mood;
+  const latestMoodEntry = lastItem(data.moodEntries);
+  const todayMood = latestMoodEntry?.mood;
+  const personalizedRec = data.personalizedRecommendation;
 
   return (
     <div className="page-stack">
@@ -570,6 +613,13 @@ function HomePage({ data, onNavigate, onOpenEducation }) {
         <PrimaryButton onClick={() => onNavigate("mood")}>Check-in Mood</PrimaryButton>
       </Card>
 
+      {personalizedRec && (
+        <>
+          <SectionTitle title="Rekomendasi Personal" action="Detail" onAction={() => onNavigate("recommendation")} />
+          <PersonalizedRecommendationCard item={personalizedRec} heading="Rekomendasi untuk kamu" />
+        </>
+      )}
+
       <SectionTitle title="Menu Utama" />
       <div className="feature-grid">
         {quickMenu.map((item) => (
@@ -587,11 +637,31 @@ function HomePage({ data, onNavigate, onOpenEducation }) {
       </ListOrEmpty>
 
       <SectionTitle title="Hasil Screening" action="Tes Lagi" onAction={() => onNavigate("screening")} />
-      {data.latestScreening ? <ScreeningResultCard result={data.latestScreening} /> : <EmptyCard text="Belum ada hasil screening." />}
+      {data.latestScreening ? (
+        <ScreeningResultCard result={data.latestScreening} showRecommendation={false} />
+      ) : (
+        <EmptyCard text="Belum ada hasil screening." />
+      )}
 
       <SectionTitle title="Aktivitas Harian" action="Lihat" onAction={() => onNavigate("recommendation")} />
       <ListOrEmpty items={data.recommendations.slice(0, 2)} empty="Belum ada rekomendasi.">
-        {(item) => <RecommendationCard key={item.id || item.title} item={item} />}
+        {(item) => (
+          <Card
+            key={item.id || item.title}
+            className="recommendation-card-compact"
+            style={{ "--accent": item.accentColor, background: `${item.accentColor}1a`, border: "none" }}
+            onClick={() => onNavigate("recommendation")}
+            as="button"
+          >
+            <div className="row">
+              <IconBadge icon="favorite" color={item.accentColor} softColor="#fff" />
+              <div className="text-left">
+                <h3 className="text-bold">{item.title}</h3>
+                <p className="line-clamp-2">{item.description}</p>
+              </div>
+            </div>
+          </Card>
+        )}
       </ListOrEmpty>
     </div>
   );
@@ -820,10 +890,12 @@ function AnalyticsPage({ data }) {
 
 function RecommendationPage({ data }) {
   const alert = data.riskAlerts[0];
+  const personalizedRec = data.personalizedRecommendation || data.latestScreening?.recommendation;
   return (
     <div className="page-stack">
       <ScreenTitle page="recommendation" />
-      <Card className="soft-peach">
+
+      <Card className="recommendation-hero-card" style={{ background: colors.peachSoft }}>
         <div className="row">
           <IconBadge icon="auto_awesome" color={colors.peach} softColor="#fff" />
           <div>
@@ -832,6 +904,12 @@ function RecommendationPage({ data }) {
           </div>
         </div>
       </Card>
+
+      {personalizedRec ? (
+        <PersonalizedRecommendationCard item={personalizedRec} heading="Rekomendasi untuk kamu" />
+      ) : null}
+
+      <SectionTitle title="Aktivitas Harian" />
       <ListOrEmpty items={data.recommendations} empty="Belum ada rekomendasi dari server.">
         {(item) => <RecommendationCard key={item.id || item.title} item={item} />}
       </ListOrEmpty>
@@ -1120,26 +1198,133 @@ function EducationCard({ content, compact = false, onOpen }) {
   );
 }
 
+function PersonalizedRecommendationCard({ item, heading = "Rekomendasi personal" }) {
+  const accent = item.isHighSeverity ? "#B3261E" : item.accentColor;
+  const background = item.isHighSeverity ? "#FFF4F4" : `${item.accentColor}1a`;
+  const borderColor = item.isHighSeverity ? "#FFC8C8" : "rgba(237, 230, 239, 0.72)";
+
+  return (
+    <Card
+      className={`personalized-recommendation-card ${item.isHighSeverity ? "high-severity" : ""}`}
+      style={{ "--accent": accent, background, borderColor }}
+    >
+      <div className="recommendation-head">
+        <div className="row">
+          <IconBadge icon="info" color={accent} softColor="#fff" />
+          <div className="text-left">
+            <h3>{heading}</h3>
+            {item.title ? <p>{item.title}</p> : null}
+          </div>
+        </div>
+        {item.severityLabel ? (
+          <span className="severity-tag" style={{ color: accent }}>
+            {item.severityLabel}
+          </span>
+        ) : null}
+      </div>
+
+      {item.description ? (
+        <div className="personalized-recommendation-body">
+          <span style={{ color: accent }}>Skrip konseling singkat</span>
+          <p>{item.description}</p>
+        </div>
+      ) : null}
+
+      {item.hasSafetyMessage ? <SafetySupportCallout accent={accent} /> : null}
+    </Card>
+  );
+}
+
+function SafetySupportCallout({ accent }) {
+  return (
+    <div className="safety-support-callout" style={{ "--accent": accent }}>
+      <MaterialIcon name="info" />
+      <p>
+        Bantuan darurat: jika situasimu terasa tidak aman, segera hubungi guru BK, orang tua/wali, tenaga kesehatan, atau layanan darurat setempat.
+      </p>
+    </div>
+  );
+}
+
+function ScreeningAnalysisCard({ analysis, heading = "Analisis Data", showMainPoints = true }) {
+  const accent = getAnalysisAccentColor(analysis);
+  const highSeverity = analysis?.severity === "severe" || analysis?.severity === "extremely_severe";
+  const hasSafetyMessage = containsSafetyMessage([
+    analysis?.title,
+    ...(analysis?.mainPoints || []),
+    analysis?.educationMessage
+  ].filter(Boolean).join(" "));
+
+  return (
+    <Card
+      className={`screening-analysis-card ${highSeverity ? "high-severity" : ""}`}
+      style={{
+        "--accent": accent,
+        background: highSeverity ? "#FFF4F4" : `${accent}1a`,
+        borderColor: highSeverity ? "#FFC8C8" : "rgba(237, 230, 239, 0.72)"
+      }}
+    >
+      <div className="recommendation-head">
+        <div className="row">
+          <IconBadge icon="info" color={accent} softColor="#fff" />
+          <div className="text-left">
+            <h3>{heading}</h3>
+            {analysis?.title ? <p>{analysis.title}</p> : null}
+          </div>
+        </div>
+        {analysis?.severityLabel ? (
+          <span className="severity-tag" style={{ color: accent }}>
+            {analysis.severityLabel}
+          </span>
+        ) : null}
+      </div>
+
+      {showMainPoints && analysis?.mainPoints?.length ? (
+        <div className="analysis-points">
+          {analysis.mainPoints.map((point) => (
+            <div key={point}>
+              <span style={{ color: accent }}>•</span>
+              <p>{point}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {analysis?.educationMessage ? (
+        <div className="analysis-message">
+          <p>{analysis.educationMessage}</p>
+        </div>
+      ) : null}
+
+      {highSeverity && hasSafetyMessage ? <SafetySupportCallout accent={accent} /> : null}
+    </Card>
+  );
+}
+
 function RecommendationCard({ item }) {
   return (
     <Card className="recommendation-card" style={{ "--accent": item.accentColor }}>
       <div className="recommendation-head">
         <div className="row">
           <IconBadge icon="lightbulb" color={item.accentColor} softColor="#fff" />
-          <div>
-            <h3>{item.title}</h3>
-            <p>{item.category}</p>
+          <div className="text-left">
+            <h3 className="title-large">{item.title}</h3>
+            <p className="muted-text">{item.category}</p>
           </div>
         </div>
-        {item.priority ? <span className="priority-pill">{item.priority}</span> : null}
+        {item.priority ? (
+          <span className="priority-tag" style={{ color: item.accentColor }}>
+            {item.priority}
+          </span>
+        ) : null}
       </div>
-      <p>{item.description}</p>
-      <strong className="duration">{item.duration}</strong>
+      <p className="description-text">{item.description}</p>
+      <strong className="duration-label" style={{ color: item.accentColor }}>{item.duration}</strong>
     </Card>
   );
 }
 
-function ScreeningResultCard({ result }) {
+function ScreeningResultCard({ result, showRecommendation = true }) {
   return (
     <Card>
       <div className="row">
@@ -1152,9 +1337,15 @@ function ScreeningResultCard({ result }) {
       <div className="score-stack">
         {result.scores.map((score) => <ScoreBar key={score.label} score={score} />)}
       </div>
+      {result.analysis ? <ScreeningAnalysisCard analysis={result.analysis} /> : null}
+      {showRecommendation && result.recommendation ? (
+        <PersonalizedRecommendationCard item={result.recommendation} heading="Rekomendasi Personalisasi" />
+      ) : null}
       <div className="medical-note">
         <strong>DISCLAIMER MEDIS</strong>
-        <span>Hasil ini adalah alat pemantauan mandiri dan bukan diagnosis klinis medis.</span>
+        <span>
+          Hasil ini adalah alat pemantauan mandiri dan BUKAN merupakan diagnosis klinis medis. Jika Anda merasa sangat tertekan atau berpikir untuk menyakiti diri sendiri, segera hubungi profesional kesehatan atau layanan darurat terdekat.
+        </span>
       </div>
     </Card>
   );

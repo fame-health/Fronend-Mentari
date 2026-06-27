@@ -129,9 +129,22 @@ export async function loadMentariData() {
     if (dash?.user) data.profile = mapUser(dash.user);
     if (dash?.latest_mood) data.moodEntries = [mapMoodEntry(dash.latest_mood)].filter(Boolean);
     if (dash?.latest_screening) data.latestScreening = mapScreeningResult(dash.latest_screening);
+
+    // New fields from dashboard update
+    if (dash?.screening_analysis) data.screeningAnalysis = mapScreeningAnalysis(dash.screening_analysis);
+    if (dash?.personalized_recommendation) data.personalizedRecommendation = mapRecommendation(dash.personalized_recommendation);
+
     if (Array.isArray(dash?.active_risk_alerts)) data.riskAlerts = dash.active_risk_alerts.map(mapRiskAlert);
     if (Array.isArray(dash?.recommendations)) data.recommendations = dash.recommendations.map(mapRecommendation);
     data.activityStats = mapStatistics(dash?.statistics);
+
+    if (data.latestScreening) {
+      data.latestScreening = {
+        ...data.latestScreening,
+        analysis: data.latestScreening.analysis || data.screeningAnalysis,
+        recommendation: data.latestScreening.recommendation || data.personalizedRecommendation
+      };
+    }
   }
 
   if (moodOptions.status === "fulfilled") {
@@ -148,8 +161,19 @@ export async function loadMentariData() {
   }
   if (screeningResults.status === "fulfilled") {
     const mapped = findArray(screeningResults.value).map(mapScreeningResult).filter(Boolean);
+    if (mapped[0]) {
+      mapped[0] = {
+        ...mapped[0],
+        analysis: mapped[0].analysis || data.screeningAnalysis,
+        recommendation: mapped[0].recommendation || data.personalizedRecommendation
+      };
+    }
     data.screeningResults = mapped;
     data.latestScreening = mapped[0] || null;
+    if (data.latestScreening) {
+        if (!data.screeningAnalysis) data.screeningAnalysis = data.latestScreening.analysis;
+        if (!data.personalizedRecommendation) data.personalizedRecommendation = data.latestScreening.recommendation;
+    }
   }
   if (education.status === "fulfilled") {
     if (education.value.categories.length) data.educationCategories = education.value.categories;
@@ -312,19 +336,20 @@ function findArray(payload) {
   return [];
 }
 
-function mapUser(user = {}) {
-  user = user?.user || user;
-  const name = user.name || "";
+function mapUser(user) {
+  if (!user) return createEmptyUserData().profile;
+  const u = user.user || user;
+  const name = u.name || "";
   return {
-    id: Number(user.id || 0),
+    id: Number(u.id || 0),
     name,
-    email: user.email || "",
-    school: user.school?.name || user.school_name || "Sekolah belum ditentukan",
-    level: user.level || "",
-    initial: user.avatar_initial || name.slice(0, 1).toUpperCase() || "M",
-    streakDays: Number(user.streak_days || 0),
-    joinedLabel: user.created_at ? `Bergabung ${formatMonthYear(user.created_at)}` : "",
-    canTakeScreening: user.can_take_screening == null ? true : Boolean(user.can_take_screening)
+    email: u.email || "",
+    school: u.school?.name || u.school_name || "Sekolah belum ditentukan",
+    level: u.level || "",
+    initial: u.avatar_initial || name.slice(0, 1).toUpperCase() || "M",
+    streakDays: Number(u.streak_days || 0),
+    joinedLabel: u.created_at ? `Bergabung ${formatMonthYear(u.created_at)}` : "",
+    canTakeScreening: u.can_take_screening == null ? true : Boolean(u.can_take_screening)
   };
 }
 
@@ -399,7 +424,24 @@ function mapScreeningQuestion(question = {}) {
   };
 }
 
+function mapScreeningAnalysis(analysis = {}) {
+    return {
+        severity: normalizeSeverity(analysis.severity) || null,
+        severityLabel: analysis.severity_label || severityLabel(analysis.severity),
+        title: stripHtml(analysis.title || ""),
+        mainPoints: Array.isArray(analysis.main_points)
+          ? analysis.main_points.map(stripHtml).filter(Boolean)
+          : [],
+        educationMessage: stripHtml(analysis.education_message || "")
+    };
+}
+
 function mapScreeningResult(result = {}) {
+  const fallbackSeverity = highestSeverityKey([
+    result.depression_severity,
+    result.anxiety_severity,
+    result.stress_severity
+  ]);
   const scores = [
     mapDassScore("Depresi", result.depression_score, result.depression_severity),
     mapDassScore("Kecemasan", result.anxiety_score, result.anxiety_severity),
@@ -408,8 +450,12 @@ function mapScreeningResult(result = {}) {
   return {
     id: Number(result.id || 0),
     dateLabel: formatDate(result.taken_at),
-    summary: result.summary || "",
-    scores
+    summary: stripHtml(result.summary || ""),
+    scores,
+    analysis: result.analysis
+      ? mapScreeningAnalysis({ ...result.analysis, severity: result.analysis.severity || fallbackSeverity })
+      : null,
+    recommendation: result.recommendation ? mapRecommendation(result.recommendation, fallbackSeverity) : null
   };
 }
 
@@ -422,15 +468,22 @@ function mapDassScore(label, rawScore, severity) {
   };
 }
 
-function mapRecommendation(recommendation = {}) {
+function mapRecommendation(recommendation = {}, fallbackSeverity = null) {
+  const severity = normalizeSeverity(recommendation.severity || fallbackSeverity);
   return {
     id: Number(recommendation.id || 0),
-    title: recommendation.title || "",
+    title: stripHtml(recommendation.title || ""),
     category: recommendation.category || "",
-    description: recommendation.description || "",
+    severity: severity || "normal",
+    severityLabel: severityLabel(severity),
+    description: stripHtml(recommendation.description || ""),
+    durationMinutes: recommendation.duration_minutes == null ? null : Number(recommendation.duration_minutes),
     duration: recommendation.duration_label || (recommendation.duration_minutes ? `${recommendation.duration_minutes} menit` : ""),
     priority: recommendation.priority || "",
-    accentColor: normalizeColor(recommendation.accent_color, colors.mint)
+    accentColor: normalizeColor(recommendation.accent_color, colors.mint),
+    isActive: Boolean(recommendation.is_active ?? true),
+    isHighSeverity: severity === "severe" || severity === "extremely_severe",
+    hasSafetyMessage: containsSafetyMessage(recommendation.description || "")
   };
 }
 
@@ -514,6 +567,41 @@ function normalizeColor(value, fallback) {
   return fallback;
 }
 
+function normalizeSeverity(value) {
+  const normalized = String(value || "").toLowerCase().trim().replace(/\s+/g, "_");
+  const aliases = {
+    normal: "normal",
+    mild: "mild",
+    ringan: "mild",
+    moderate: "moderate",
+    sedang: "moderate",
+    severe: "severe",
+    berat: "severe",
+    extremely_severe: "extremely_severe",
+    sangat_berat: "extremely_severe",
+    sangat_parah: "extremely_severe"
+  };
+  return aliases[normalized] || normalized;
+}
+
+function highestSeverityKey(values = []) {
+  return values
+    .map(normalizeSeverity)
+    .filter(Boolean)
+    .sort((a, b) => severityRank(b) - severityRank(a))[0] || "";
+}
+
+function severityRank(value) {
+  const map = {
+    normal: 1,
+    mild: 2,
+    moderate: 3,
+    severe: 4,
+    extremely_severe: 5
+  };
+  return map[normalizeSeverity(value)] || 0;
+}
+
 function severityLabel(value) {
   const map = {
     normal: "Normal",
@@ -522,7 +610,7 @@ function severityLabel(value) {
     severe: "Berat",
     extremely_severe: "Sangat berat"
   };
-  return map[String(value || "").toLowerCase()] || String(value || "").replace(/_/g, " ");
+  return map[normalizeSeverity(value)] || String(value || "").replace(/_/g, " ");
 }
 
 function severityColor(value) {
@@ -533,10 +621,26 @@ function severityColor(value) {
     severe: colors.peach,
     extremely_severe: colors.pink
   };
-  return map[String(value || "").toLowerCase()] || colors.pink;
+  return map[normalizeSeverity(value)] || colors.pink;
+}
+
+function containsSafetyMessage(value) {
+  const text = stripHtml(value).toLowerCase();
+  return [
+    "pesan keselamatan",
+    "tidak aman",
+    "menyakiti diri",
+    "bunuh diri",
+    "darurat",
+    "segera hubungi",
+    "orang dewasa tepercaya",
+    "guru bk",
+    "tenaga kesehatan"
+  ].some((keyword) => text.includes(keyword));
 }
 
 function stripHtml(value) {
+  if (value == null) return "";
   return String(value)
     .replace(/<\s*br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n\n")
